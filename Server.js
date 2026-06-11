@@ -10,13 +10,13 @@ app.use(express.json());
 require('./CSDL');
 
 // Routes
-app.use('/api/tai-khoan', require('./config/TaiKhoan'));
-app.use('/api/benh-nhan', require('./config/BenhNhan'));
-app.use('/api/lich-hen', require('./config/LichHen'));
-app.use('/api/kham-benh', require('./config/KhamBenh'));
-app.use('/api/dich-vu', require('./config/DichVu'));
-app.use('/api/hoa-don', require('./config/HoaDon'));
-app.use('/api/bao-cao', require('./config/BaoCao'));
+app.use('/api/tai-khoan',require('./config/TaiKhoan'));
+app.use('/api/benh-nhan',require('./config/BenhNhan'));
+app.use('/api/lich-hen',require('./config/LichHen'));
+app.use('/api/benh-an',require('./config/BenhAn'));
+app.use('/api/don-thuoc',require('./config/DonThuoc'));
+app.use('/api/theo-doi',require('./config/TheoDoiDieuTri'));
+// app.use('/api/hoa-don',require('./config/ThongBao'));
 
 // Trang chủ test
 app.get('/', (req, res) => {
