@@ -2,8 +2,8 @@ const express = require('express');
 const router = express.Router();
 const db = require('../CSDL');
 
+//Lấy tt dựa vào mã bệnh án
 router.get('/:maBenhAn',(req,res)=>{
-
     db.query(
         `SELECT *
         FROM theodoi_dieutri
@@ -13,11 +13,10 @@ router.get('/:maBenhAn',(req,res)=>{
             res.json(result);
         }
     );
-
 });
 
+//Gửi phản hồi
 router.put('/phan-hoi/:id',(req,res)=>{
-
     const {
         MucDoDau,
         TinhTrangSauDungThuoc,
@@ -38,7 +37,6 @@ router.put('/phan-hoi/:id',(req,res)=>{
             req.params.id
         ]
     );
-
     res.json({
         message:'Gửi phản hồi thành công'
     });

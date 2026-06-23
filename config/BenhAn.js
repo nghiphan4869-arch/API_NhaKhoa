@@ -2,8 +2,8 @@ const express = require('express');
 const router = express.Router();
 const db = require('../CSDL');
 
+//Lấy tt bệnh án dựa vào mã bệnh nhân
 router.get('/benhnhan/:id',(req,res)=>{
-
     db.query(
         `SELECT *
          FROM benhan
@@ -13,11 +13,10 @@ router.get('/benhnhan/:id',(req,res)=>{
             res.json(result);
         }
     );
-
 });
 
+//Lấy tt bệnh án dựa vào mã bệnh án
 router.get('/:id',(req,res)=>{
-
     db.query(
         `SELECT *
          FROM benhan
@@ -27,7 +26,6 @@ router.get('/:id',(req,res)=>{
             res.json(result);
         }
     );
-
 });
 
 module.exports = router;

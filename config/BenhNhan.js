@@ -1,9 +1,31 @@
+//Lấy tt bệnh nhân dựa theo Mã
 const express = require('express');
 const router = express.Router();
 const db = require('../CSDL');
 
-router.get('/:id',(req,res)=>{
+//Lấy danh sách bệnh nhân
+router.get('/', (req, res) => {
+    db.query(
+        `SELECT
+            MaBenhNhan,
+            HoTen,
+            Email,
+            SDT,
+            DiaChi
+         FROM benhnhan`,
+        (err, result) => {
 
+            if (err) {
+                return res.status(500).json(err);
+            }
+
+            res.json(result);
+        }
+    );
+});
+
+//Lấy bệnh nhân dựa trên mã bn
+router.get('/:id',(req,res)=>{
     db.query(
         `SELECT *
          FROM benhnhan
@@ -16,8 +38,8 @@ router.get('/:id',(req,res)=>{
 
 });
 
+//Cập nhật tt bệnh nhân
 router.put('/:id',(req,res)=>{
-
     const {
         HoTen,
         Email,
@@ -44,7 +66,6 @@ router.put('/:id',(req,res)=>{
     res.json({
         message:'Cập nhật thành công'
     });
-
 });
 
 module.exports = router;

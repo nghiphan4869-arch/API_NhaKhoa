@@ -2,8 +2,8 @@ const express = require('express');
 const router = express.Router();
 const db = require('../CSDL');
 
+//Lấy thông tin đơn thuốc dựa theo bệnh án
 router.get('/:maBenhAn',(req,res)=>{
-
     db.query(
         `SELECT
             dt.MaDonThuoc,
@@ -22,7 +22,6 @@ router.get('/:maBenhAn',(req,res)=>{
             res.json(result);
         }
     );
-
 });
 
 module.exports = router;

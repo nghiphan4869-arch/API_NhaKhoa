@@ -2,8 +2,8 @@ const express = require('express');
 const router = express.Router();
 const db = require('../CSDL');
 
+//Đặt lịch hẹn
 router.post('/',(req,res)=>{
-
     const {
         MaBenhNhan,
         MaBacSi,
@@ -34,13 +34,12 @@ router.post('/',(req,res)=>{
             LyDoKham
         ]
     );
-
     res.json({
         message:'Đặt lịch thành công'
     });
-
 });
 
+//Lấy tt lịch hẹn dựa vào mã bệnh nhân
 router.get('/benhnhan/:id',(req,res)=>{
 
     db.query(
@@ -52,11 +51,10 @@ router.get('/benhnhan/:id',(req,res)=>{
             res.json(result);
         }
     );
-
 });
 
+//Lấy tt lịch hẹn dựa vào mã lịch hẹn
 router.get('/:id',(req,res)=>{
-
     db.query(
         `SELECT *
          FROM lichhen
@@ -66,11 +64,10 @@ router.get('/:id',(req,res)=>{
             res.json(result);
         }
     );
-
 });
 
+//Huỷ lịch hẹn
 router.put('/huy/:id',(req,res)=>{
-
     db.query(
         `UPDATE lichhen
          SET TrangThai='DaHuy'
@@ -81,7 +78,6 @@ router.put('/huy/:id',(req,res)=>{
     res.json({
         message:'Đã hủy lịch'
     });
-
 });
 
 module.exports = router;
