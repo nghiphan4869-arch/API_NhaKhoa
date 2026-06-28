@@ -1,18 +1,20 @@
-const mysql = require('mysql2');
+require('dotenv').config();
 
-const db = mysql.createConnection({
-    host: 'localhost',
-    user: 'root',
-    password: '',
-    database: 'quanlynhakhoa' 
+const mysql = require('mysql2/promise');
+
+const pool = mysql.createPool({
+  host: process.env.DB_HOST || 'localhost',
+  port: Number(process.env.DB_PORT || 3306),
+  user: process.env.DB_USER || 'root',
+  password: process.env.DB_PASSWORD || '',
+  database: process.env.DB_NAME || 'quanlynhakhoa',
+  waitForConnections: true,
+  connectionLimit: 10,
+  queueLimit: 0,
+  enableKeepAlive: true,
+  keepAliveInitialDelay: 0
 });
 
-db.connect((err) => {
-    if (err) {
-        console.error('Lỗi kết nối MySQL:', err);
-        return;
-    }
-    console.log('--- Đã kết nối thành công tới Database books ---');
-});
+console.log('Đã tạo pool kết nối MySQL');
 
-module.exports = db;
+module.exports = pool;
