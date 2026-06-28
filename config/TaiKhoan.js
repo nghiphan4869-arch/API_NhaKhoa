@@ -1,6 +1,15 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../CSDL');
+const nodemailer = require('nodemailer');
+
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
+  },
+});
 
 // Đăng ký bệnh nhân
 router.post('/dang-ky', async (req, res) => {
@@ -110,7 +119,10 @@ router.post('/dang-nhap', async (req, res) => {
   }
 });
 
-// Quên mật khẩu - tạo OTP
+// Store for OTPs in-memory
+const otpStore = new Map();
+
+// Quên mật khẩu - tạo OTP và gửi về Gmail thật (Lưu OTP trong memory)
 router.post('/quen-mat-khau', async (req, res) => {
   const { TenDangNhap } = req.body;
 
@@ -119,28 +131,71 @@ router.post('/quen-mat-khau', async (req, res) => {
   }
 
   try {
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-
+    // Tìm email của bệnh nhân
     const [result] = await db.query(
-      `UPDATE taikhoan
-       SET OTP = ?
-       WHERE MaTaiKhoan = (
-         SELECT MaTaiKhoan FROM benhnhan WHERE Email = ? OR SDT = ? LIMIT 1
-       )`,
-      [otp, TenDangNhap, TenDangNhap]
+      `SELECT bn.Email 
+       FROM benhnhan bn
+       JOIN taikhoan tk ON bn.MaTaiKhoan = tk.MaTaiKhoan
+       WHERE bn.Email = ? OR bn.SDT = ? LIMIT 1`,
+      [TenDangNhap, TenDangNhap]
     );
 
-    if (result.affectedRows === 0) {
-      return res.status(404).json({ message: 'Không tìm thấy tài khoản' });
+    if (result.length === 0 || !result[0].Email) {
+      return res.status(404).json({ message: 'Không tìm thấy tài khoản hoặc tài khoản chưa có Email' });
     }
 
-    res.json({
-      message: 'Tạo OTP thành công',
-      OTP: otp
+    const email = result[0].Email;
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const expires = Date.now() + 2 * 60 * 1000; // 2 phút
+
+    // Lưu OTP vào memory store
+    otpStore.set(email, { otp, expires });
+
+    // Gửi email
+    const mailOptions = {
+      from: process.env.EMAIL_USER,
+      to: email,
+      subject: '[DentalCare] Mã xác thực OTP đặt lại mật khẩu',
+      text: `Xin chào,\n\nMã xác thực OTP của bạn là: ${otp}\nMã này dùng để đặt lại mật khẩu tài khoản DentalCare của bạn. Vui lòng không chia sẻ mã này cho bất kỳ ai.\n\nTrân trọng,\nĐội ngũ DentalCare.`
+    };
+
+    transporter.sendMail(mailOptions, (error, info) => {
+      if (error) {
+        console.error('Lỗi gửi email:', error);
+        otpStore.delete(email); // Xóa OTP khỏi store nếu lỗi
+        return res.status(500).json({ message: 'Không thể gửi email OTP', error: error.message });
+      }
+      res.json({ message: 'Mã OTP đã được gửi về Gmail của bạn.' });
     });
+
   } catch (error) {
     console.error('Lỗi quên mật khẩu:', error);
     res.status(500).json({ message: 'Lỗi quên mật khẩu', error: error.message });
+  }
+});
+
+// Xác thực OTP (Kiểm tra trong memory)
+router.post('/xac-thuc-otp', (req, res) => {
+  const { Email, OTP } = req.body;
+  if (!Email || !OTP) {
+    return res.status(400).json({ message: 'Vui lòng điền đầy đủ thông tin' });
+  }
+
+  const record = otpStore.get(Email);
+  if (!record) {
+    return res.status(400).json({ success: false, message: 'Mã OTP đã hết hạn hoặc không tồn tại' });
+  }
+
+  if (Date.now() > record.expires) {
+    otpStore.delete(Email);
+    return res.status(400).json({ success: false, message: 'Mã OTP đã hết hạn' });
+  }
+
+  if (record.otp === OTP) {
+    otpStore.delete(Email); // Xóa mã OTP sau khi xác thực thành công
+    res.json({ success: true, message: 'Xác thực thành công' });
+  } else {
+    res.status(400).json({ success: false, message: 'Mã OTP không chính xác' });
   }
 });
 
