@@ -14,6 +14,23 @@ function getServiceName(lyDoKham) {
   return String(lyDoKham || '').split(':')[0].trim();
 }
 
+// Middleware tự động cập nhật các lịch hẹn quá hạn sang 'DaHetHan'
+const autoUpdateExpired = async (req, res, next) => {
+  try {
+    await db.query(
+      `UPDATE lichhen
+       SET TrangThai = 'DaHetHan'
+       WHERE (NgayHen < CURRENT_DATE OR (NgayHen = CURRENT_DATE AND GioHen < CURRENT_TIME))
+         AND TrangThai NOT IN ('DaHoanTat', 'DaHuy', 'DaHetHan')`
+    );
+  } catch (error) {
+    console.error('Lỗi tự động cập nhật lịch hẹn hết hạn:', error);
+  }
+  next();
+};
+
+router.use(autoUpdateExpired);
+
 // Đặt lịch hẹn
 router.post('/', async (req, res) => {
   const { MaBenhNhan, MaBacSi, NgayHen, GioHen, LyDoKham } = req.body;
@@ -123,6 +140,38 @@ router.get('/bacsi/:id', async (req, res) => {
 // Hủy lịch hẹn
 router.put('/huy/:id', async (req, res) => {
   try {
+    // 1. Lấy thông tin lịch hẹn trước khi hủy
+    const [appointments] = await db.query(
+      'SELECT MaBenhNhan, NgayHen, GioHen FROM lichhen WHERE MaLichHen = ?',
+      [req.params.id]
+    );
+
+    if (appointments.length === 0) {
+      return res.status(404).json({ message: 'Không tìm thấy lịch hẹn' });
+    }
+
+    const appointment = appointments[0];
+    const maBenhNhan = appointment.MaBenhNhan;
+
+    // Định dạng ngày hẹn DD/MM/YYYY
+    let ngayHenStr = '';
+    try {
+      const dateObj = new Date(appointment.NgayHen);
+      const day = String(dateObj.getDate()).padStart(2, '0');
+      const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+      const year = dateObj.getFullYear();
+      ngayHenStr = `${day}/${month}/${year}`;
+    } catch (_) {
+      ngayHenStr = appointment.NgayHen;
+    }
+
+    // Định dạng giờ hẹn HH:MM
+    let gioHenStr = appointment.GioHen;
+    if (gioHenStr && gioHenStr.length > 5) {
+      gioHenStr = gioHenStr.substring(0, 5);
+    }
+
+    // 2. Cập nhật trạng thái hủy
     const [result] = await db.query(
       `UPDATE lichhen
        SET TrangThai = 'DaHuy'
@@ -131,10 +180,21 @@ router.put('/huy/:id', async (req, res) => {
     );
 
     if (result.affectedRows === 0) {
-      return res.status(404).json({ message: 'Không tìm thấy lịch chờ duyệt để hủy' });
+      return res.status(400).json({ message: 'Lịch hẹn đã được duyệt hoặc đã bị hủy, không thể hủy tiếp' });
     }
 
-    res.json({ message: 'Đã hủy lịch' });
+    // 3. Thêm thông báo hủy lịch vào bảng thongbao
+    await db.query(
+      `INSERT INTO thongbao (MaBenhNhan, TieuDe, NoiDung, DaDoc)
+       VALUES (?, ?, ?, 0)`,
+      [
+        maBenhNhan,
+        'Lịch hẹn đã hủy',
+        `Lịch hẹn vào lúc ${gioHenStr} ngày ${ngayHenStr} của bạn đã được hủy thành công.`
+      ]
+    );
+
+    res.json({ message: 'Đã hủy lịch và tạo thông báo thành công' });
   } catch (error) {
     console.error('Lỗi hủy lịch:', error);
     res.status(500).json({ message: 'Lỗi hủy lịch', error: error.message });

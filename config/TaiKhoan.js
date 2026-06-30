@@ -38,7 +38,7 @@ router.post('/dang-ky', async (req, res) => {
 
     const [accountResult] = await connection.query(
       `INSERT INTO taikhoan (MaVaiTro, MatKhau, TrangThai)
-       VALUES (1, ?, 'HoatDong')`,
+       VALUES (4, ?, 'HoatDong')`,
       [MatKhau]
     );
 

@@ -2,6 +2,7 @@ require('dotenv').config();
 
 const express = require('express');
 const cors = require('cors');
+const path = require('path');
 const db = require('./CSDL');
 
 const app = express();
@@ -9,6 +10,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use('/public', express.static(path.join(__dirname, 'public')));
 
 app.get('/', (req, res) => {
   res.json({
@@ -80,6 +82,20 @@ app.use((error, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 3000;
+
+// Tự động kiểm tra và thêm cột HinhAnh vào bảng benhnhan nếu chưa có
+async function setupDatabase() {
+  try {
+    const [columns] = await db.query("SHOW COLUMNS FROM benhnhan LIKE 'HinhAnh'");
+    if (columns.length === 0) {
+      await db.query("ALTER TABLE benhnhan ADD COLUMN HinhAnh VARCHAR(255) DEFAULT NULL");
+      console.log("Đã tự động thêm cột HinhAnh vào bảng benhnhan");
+    }
+  } catch (error) {
+    console.error("Lỗi đồng bộ cấu trúc database:", error);
+  }
+}
+setupDatabase();
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server đang chạy tại port ${PORT}`);
