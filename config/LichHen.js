@@ -31,58 +31,127 @@ const autoUpdateExpired = async (req, res, next) => {
 
 router.use(autoUpdateExpired);
 
+// Lấy danh sách bác sĩ rảnh trong ngày
+router.get('/bacsi-ranh', async (req, res) => {
+  const { ngay } = req.query; // YYYY-MM-DD
+  if (!ngay) {
+    return res.status(400).json({ message: 'Vui lòng cung cấp ngày' });
+  }
+
+  try {
+    // 1. Kiểm tra xem ngày này có bác sĩ nào đăng ký lịch trong dangky_lich hay không
+    const [hasSchedule] = await db.query(
+      `SELECT COUNT(*) AS count FROM dangky_lich WHERE NgayLamViec = ?`,
+      [ngay]
+    );
+
+    let doctors = [];
+    if (hasSchedule[0].count > 0) {
+      // Nếu có đăng ký lịch: chỉ lấy các bác sĩ có đăng ký lịch làm việc "Trong" vào ngày đó
+      const [rows] = await db.query(
+        `SELECT DISTINCT nv.MaNhanVien, nv.HoTen, nv.ChuyenMon 
+         FROM nhanvien nv
+         INNER JOIN dangky_lich dl ON nv.MaNhanVien = dl.MaBacSi
+         WHERE nv.ChucVu = 'BacSi' 
+           AND (nv.TrangThai IS NULL OR nv.TrangThai != 'NghiViec')
+           AND dl.NgayLamViec = ? 
+           AND dl.TrangThai = 'Trong'`,
+        [ngay]
+      );
+      doctors = rows;
+    } else {
+      // Nếu không có ai đăng ký lịch trên dangky_lich cho ngày này:
+      // Mặc định lấy tất cả bác sĩ đang làm việc
+      const [rows] = await db.query(
+        `SELECT MaNhanVien, HoTen, ChuyenMon 
+         FROM nhanvien 
+         WHERE ChucVu = 'BacSi' AND (TrangThai IS NULL OR TrangThai != 'NghiViec')`
+      );
+      doctors = rows;
+    }
+
+    // 2. Với mỗi bác sĩ, đếm số lịch hẹn hoạt động trong ngày đó
+    const listBacSiRanh = [];
+    for (const doc of doctors) {
+      const [countResult] = await db.query(
+        `SELECT COUNT(*) as count FROM lichhen 
+         WHERE MaBacSi = ? AND NgayHen = ? AND TrangThai != 'DaHuy'`,
+        [doc.MaNhanVien, ngay]
+      );
+      const count = countResult[0].count;
+      // Bác sĩ rảnh nếu có ít hơn 12 lịch hẹn trong ngày
+      if (count < 12) {
+        listBacSiRanh.push({
+          MaNhanVien: doc.MaNhanVien,
+          HoTen: doc.HoTen,
+          ChuyenMon: doc.ChuyenMon,
+          SoLichHen: count
+        });
+      }
+    }
+
+    res.json(listBacSiRanh);
+  } catch (error) {
+    console.error('Lỗi lấy danh sách bác sĩ rảnh:', error);
+    res.status(500).json({ message: 'Lỗi lấy danh sách bác sĩ rảnh', error: error.message });
+  }
+});
+
 // Đặt lịch hẹn
 router.post('/', async (req, res) => {
   const { MaBenhNhan, MaBacSi, NgayHen, GioHen, LyDoKham } = req.body;
 
-  if (!MaBenhNhan || !MaBacSi || !NgayHen || !GioHen || !LyDoKham) {
+  if (!MaBenhNhan || !MaBacSi || !NgayHen || !LyDoKham) {
     return res.status(400).json({
-      message: 'Vui lòng nhập MaBenhNhan, MaBacSi, NgayHen, GioHen, LyDoKham'
+      message: 'Vui lòng nhập MaBenhNhan, MaBacSi, NgayHen, LyDoKham'
     });
   }
 
   try {
-    const [services] = await db.query('SELECT TenDichVu, ThoiGian FROM dichvu');
+    if (GioHen) {
+      const [services] = await db.query('SELECT TenDichVu, ThoiGian FROM dichvu');
 
-    const serviceDurations = {};
-    services.forEach((service) => {
-      serviceDurations[service.TenDichVu] = Number(service.ThoiGian) || 30;
-    });
+      const serviceDurations = {};
+      services.forEach((service) => {
+        serviceDurations[service.TenDichVu] = Number(service.ThoiGian) || 30;
+      });
 
-    const newServiceName = getServiceName(LyDoKham);
-    const newDuration = serviceDurations[newServiceName] || 30;
-    const newStart = timeToMinutes(GioHen);
-    const newEnd = newStart + newDuration;
+      const newServiceName = getServiceName(LyDoKham);
+      const newDuration = serviceDurations[newServiceName] || 30;
+      const newStart = timeToMinutes(GioHen);
+      const newEnd = newStart + newDuration;
 
-    const [appointments] = await db.query(
-      `SELECT *
-       FROM lichhen
-       WHERE NgayHen = ? AND TrangThai != 'DaHuy'`,
-      [NgayHen]
-    );
+      const [appointments] = await db.query(
+        `SELECT *
+         FROM lichhen
+         WHERE NgayHen = ? AND TrangThai != 'DaHuy'`,
+        [NgayHen]
+      );
 
-    for (const appointment of appointments) {
-      const oldStart = timeToMinutes(appointment.GioHen);
-      const oldServiceName = getServiceName(appointment.LyDoKham);
-      const oldDuration = serviceDurations[oldServiceName] || 30;
-      const oldEnd = oldStart + oldDuration;
+      for (const appointment of appointments) {
+        if (!appointment.GioHen) continue;
+        const oldStart = timeToMinutes(appointment.GioHen);
+        const oldServiceName = getServiceName(appointment.LyDoKham);
+        const oldDuration = serviceDurations[oldServiceName] || 30;
+        const oldEnd = oldStart + oldDuration;
 
-      const hasOverlap = newStart < oldEnd && oldStart < newEnd;
+        const hasOverlap = newStart < oldEnd && oldStart < newEnd;
 
-      if (!hasOverlap) continue;
+        if (!hasOverlap) continue;
 
-      if (Number(appointment.MaBacSi) === Number(MaBacSi)) {
-        return res.status(400).json({
-          error: 'Trùng lịch',
-          message: 'Bác sĩ đã có lịch hẹn trong khung giờ này.'
-        });
-      }
+        if (Number(appointment.MaBacSi) === Number(MaBacSi)) {
+          return res.status(400).json({
+            error: 'Trùng lịch',
+            message: 'Bác sĩ đã có lịch hẹn trong khung giờ này.'
+          });
+        }
 
-      if (Number(appointment.MaBenhNhan) === Number(MaBenhNhan)) {
-        return res.status(400).json({
-          error: 'Trùng lịch bệnh nhân',
-          message: 'Bạn đã có lịch hẹn khác trùng/giao với khung giờ này.'
-        });
+        if (Number(appointment.MaBenhNhan) === Number(MaBenhNhan)) {
+          return res.status(400).json({
+            error: 'Trùng lịch bệnh nhân',
+            message: 'Bạn đã có lịch hẹn khác trùng/giao với khung giờ này.'
+          });
+        }
       }
     }
 
@@ -90,7 +159,7 @@ router.post('/', async (req, res) => {
       `INSERT INTO lichhen
        (MaBenhNhan, MaBacSi, NgayHen, GioHen, LyDoKham, HinhThucDat, TrangThai)
        VALUES (?, ?, ?, ?, ?, 'App', 'ChoDuyet')`,
-      [MaBenhNhan, MaBacSi, NgayHen, GioHen, LyDoKham]
+      [MaBenhNhan, MaBacSi, NgayHen, GioHen || null, LyDoKham]
     );
 
     res.status(201).json({
@@ -107,9 +176,11 @@ router.post('/', async (req, res) => {
 router.get('/benhnhan/:id', async (req, res) => {
   try {
     const [rows] = await db.query(
-      `SELECT * FROM lichhen
-       WHERE MaBenhNhan = ?
-       ORDER BY NgayHen DESC, GioHen DESC`,
+      `SELECT lh.*, nv.HoTen AS TenBacSi 
+       FROM lichhen lh
+       LEFT JOIN nhanvien nv ON lh.MaBacSi = nv.MaNhanVien
+       WHERE lh.MaBenhNhan = ?
+       ORDER BY lh.NgayHen DESC, lh.GioHen DESC`,
       [req.params.id]
     );
 
@@ -124,9 +195,11 @@ router.get('/benhnhan/:id', async (req, res) => {
 router.get('/bacsi/:id', async (req, res) => {
   try {
     const [rows] = await db.query(
-      `SELECT * FROM lichhen
-       WHERE MaBacSi = ?
-       ORDER BY NgayHen DESC, GioHen DESC`,
+      `SELECT lh.*, nv.HoTen AS TenBacSi
+       FROM lichhen lh
+       LEFT JOIN nhanvien nv ON lh.MaBacSi = nv.MaNhanVien
+       WHERE lh.MaBacSi = ?
+       ORDER BY lh.NgayHen DESC, lh.GioHen DESC`,
       [req.params.id]
     );
 
